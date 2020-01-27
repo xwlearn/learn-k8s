@@ -1,3 +1,16 @@
+Table of Contents
+=================
+      * [准备工作](#准备工作)
+      * [配置kubernetes yum源](#配置kubernetes-yum源)
+      * [安装 Docker](#安装-docker)
+      * [安装 kubeadm](#安装-kubeadm)
+      * [部署 Master节点](#部署-master节点)
+         * [方法一：命令行](#方法一命令行)
+         * [方法二：配置文件(推荐，本次也采用该方式)](#方法二配置文件推荐本次也采用该方式)
+      * [安装Pod Network](#安装pod-network)
+      * [添加worker节点至集群](#添加worker节点至集群)
+      * [拷贝admin.conf到worker节点](#拷贝adminconf到worker节点)
+
 ## 准备工作
 
 在京东云买了三台云主机，配置如下
