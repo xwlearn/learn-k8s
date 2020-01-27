@@ -6,9 +6,8 @@
 | 主机名 | 角色   | 内网ip      | CPU核数 | 内存 | 磁盘 | 操作系统    | 内核     |
 | ------ | ------ | ----------- | ------- | ---- | ---- | ----------- | -------- |
 | JD1    | master | 10\.0\.0\.3 | 2       | 4GB  | 40GB | CentOS 7\.3 | 3\.10\.0 |
-| JD2    | node   | 10\.0\.0\.4 | 2       | 4GB  | 40GB | CentOS 7\.3 | 3\.10\.0 |
-| JD3    | node   | 10\.0\.0\.5 | 2       | 4GB  | 40GB | CentOS 7\.3 | 3\.10\.0 |
-
+| JD2    | worker   | 10\.0\.0\.4 | 2       | 4GB  | 40GB | CentOS 7\.3 | 3\.10\.0 |
+| JD3    | worker   | 10\.0\.0\.5 | 2       | 4GB  | 40GB | CentOS 7\.3 | 3\.10\.0 |
 
 ## 配置kubernetes yum源
 
@@ -21,8 +20,7 @@
     gpgcheck=0
     enable=1
     
-    yum clean all
-    yum makecache
+    yum clean all && yum makecache
 
 测试
 
@@ -58,6 +56,7 @@
      Experimental:    false
 
 ## 安装 kubeadm
+三台机器上都需要安装
 
     yum install kubeadm -y
     ......
@@ -73,57 +72,101 @@
 
 kubelet、kubectl、kubenetes-cni也跟着一起安装好了
 
-配置kubectl开机启动
+配置kubelet开机启动
 
     systemctl enable kubelet
 
 ## 部署 Master节点
+以jd1作为master节点，另外两台为worker节点
+### 方法一：命令行
 
+```
+kubeadm init --kubernetes-version=v1.17.2  \
+    --pod-network-cidr=10.244.0.0/16  \
+    --service-cidr=10.96.0.0/12  \
+    --apiserver-advertise-address=10.0.0.3
+```
+### 方法二：配置文件(推荐，本次也采用该方式)
 使用kubeadm配置文件，由于本次下载的kubeadm版本过高，安装低版本k8s集群时报错，索性就安装最新版本的k8s了。
 
     # 生成配置文件
-    kubeadm config print init-defaults ClusterConfiguration >kubeadm.conf
+    kubeadm config print init-defaults ClusterConfiguration >kubeadm.yaml
 
 修改默认镜像仓库，由于大家都懂得的原因，谷歌默认容器镜像地址`k8s.gcr.io`无法访问，修改为`registry.cn-hangzhou.aliyuncs.com/google_containers`
 
-    vim kubeadm.conf
+    vim kubeadm.yaml
     #修改 imageRepository: k8s.gcr.io
     #改为 imageRepository: registry.cn-hangzhou.aliyuncs.com/google_containers
     #修改 advertiseAddress: 1.2.3.4
     #改为 advertiseAddress: 10.0.0.3
 
+最终版本
+```
+apiVersion: kubeadm.k8s.io/v1beta2
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: 10.0.0.3
+  bindPort: 6443
+nodeRegistration:
+  criSocket: /var/run/dockershim.sock
+  name: jd1
+  taints:
+  - effect: NoSchedule
+    key: node-role.kubernetes.io/master
+---
+apiServer:
+  timeoutForControlPlane: 4m0s
+apiVersion: kubeadm.k8s.io/v1beta2
+certificatesDir: /etc/kubernetes/pki
+clusterName: kubernetes
+controllerManager: {}
+dns:
+  type: CoreDNS
+etcd:
+  local:
+    dataDir: /var/lib/etcd
+imageRepository: registry.cn-hangzhou.aliyuncs.com/google_containers
+kind: ClusterConfiguration
+kubernetesVersion: v1.17.2
+networking:
+  dnsDomain: cluster.local
+  podSubnet: 10.244.0.0/16
+  serviceSubnet: 10.96.0.0/12
+scheduler: {}
+```
+
 查看kubeadm config所需的镜像，更多[kubeadm config](https://v1-16.docs.kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-config/)命令
 
-    [root@JD1 ~]# kubeadm config images list --config kubeadm.conf
+    [root@JD1 ~]# kubeadm config images list --config kubeadm.yaml
     W0126 20:54:01.849570    9619 validation.go:28] Cannot validate kube-proxy config - no validator is available
     W0126 20:54:01.849607    9619 validation.go:28] Cannot validate kubelet config - no validator is available
-    registry.cn-hangzhou.aliyuncs.com/google_containers/kube-apiserver:v1.17.0
-    registry.cn-hangzhou.aliyuncs.com/google_containers/kube-controller-manager:v1.17.0
-    registry.cn-hangzhou.aliyuncs.com/google_containers/kube-scheduler:v1.17.0
-    registry.cn-hangzhou.aliyuncs.com/google_containers/kube-proxy:v1.17.0
+    registry.cn-hangzhou.aliyuncs.com/google_containers/kube-apiserver:v1.17.2
+    registry.cn-hangzhou.aliyuncs.com/google_containers/kube-controller-manager:v1.17.2
+    registry.cn-hangzhou.aliyuncs.com/google_containers/kube-scheduler:v1.17.2
+    registry.cn-hangzhou.aliyuncs.com/google_containers/kube-proxy:v1.17.2
     registry.cn-hangzhou.aliyuncs.com/google_containers/pause:3.1
     registry.cn-hangzhou.aliyuncs.com/google_containers/etcd:3.4.3-0
     registry.cn-hangzhou.aliyuncs.com/google_containers/coredns:1.6.5
 
 提前下载好这些镜像
 
-    [root@JD1 ~]# kubeadm config images pull --config kubeadm.conf
+    [root@JD1 ~]# kubeadm config images pull --config kubeadm.yaml
     W0126 19:44:46.987395   27714 validation.go:28] Cannot validate kube-proxy config - no validator is available
     W0126 19:44:46.987429   27714 validation.go:28] Cannot validate kubelet config - no validator is available
-    [config/images] Pulled registry.cn-hangzhou.aliyuncs.com/google_containers/kube-apiserver:v1.17.0
-    [config/images] Pulled registry.cn-hangzhou.aliyuncs.com/google_containers/kube-controller-manager:v1.17.0
-    [config/images] Pulled registry.cn-hangzhou.aliyuncs.com/google_containers/kube-scheduler:v1.17.0
-    [config/images] Pulled registry.cn-hangzhou.aliyuncs.com/google_containers/kube-proxy:v1.17.0
+    [config/images] Pulled registry.cn-hangzhou.aliyuncs.com/google_containers/kube-apiserver:v1.17.2
+    [config/images] Pulled registry.cn-hangzhou.aliyuncs.com/google_containers/kube-controller-manager:v1.17.2
+    [config/images] Pulled registry.cn-hangzhou.aliyuncs.com/google_containers/kube-scheduler:v1.17.2
+    [config/images] Pulled registry.cn-hangzhou.aliyuncs.com/google_containers/kube-proxy:v1.17.2
     [config/images] Pulled registry.cn-hangzhou.aliyuncs.com/google_containers/pause:3.1
     [config/images] Pulled registry.cn-hangzhou.aliyuncs.com/google_containers/etcd:3.4.3-0
     [config/images] Pulled registry.cn-hangzhou.aliyuncs.com/google_containers/coredns:1.6.5
 
 初始化master节点
 
-    [root@JD1 ~]# kubeadm init --config kubeadm.conf
+    [root@JD1 ~]# kubeadm init --config kubeadm.yaml
     W0126 20:57:30.795523   10460 validation.go:28] Cannot validate kube-proxy config - no validator is available
     W0126 20:57:30.795570   10460 validation.go:28] Cannot validate kubelet config - no validator is available
-    [init] Using Kubernetes version: v1.17.0
+    [init] Using Kubernetes version: v1.17.2
     [preflight] Running pre-flight checks
     [preflight] Pulling images required for setting up a Kubernetes cluster
     [preflight] This might take a minute or two, depending on the speed of your internet connection
@@ -230,7 +273,7 @@ kubelet、kubectl、kubenetes-cni也跟着一起安装好了
     daemonset.apps/kube-flannel-ds-ppc64le created
     daemonset.apps/kube-flannel-ds-s390x created
 
-## 添加Node节点至集群
+## 添加worker节点至集群
 
 在另外两台机器上执行如下命令即可
 
@@ -275,21 +318,48 @@ kubelet、kubectl、kubenetes-cni也跟着一起安装好了
 
     [root@JD1 ~]# kubectl version --short=true
     Client Version: v1.17.2
-    Server Version: v1.17.0
+    Server Version: v1.17.2
 
-## 拷贝证书到node节点
+## 拷贝admin.conf到worker节点
 
-node节点运行kubectl命令报错
+worker节点运行kubectl命令报错
 
     The connection to the server localhost:8080 was refused - did you specify the right host or port?
 
-kubectl命令需要使用kubernetes-admin来运行，将主节点中的/etc/kubernetes/admin.conf文件拷贝到node节点相同目录下
+kubectl命令需要使用kubernetes-admin来运行，将主节点中的/etc/kubernetes/admin.conf文件拷贝到worker节点相同目录下
 
-    [root@JD2 ~]# scp root@jd2:/etc/kubernetes/admin.conf /etc/kubernetes/
+    [root@JD2 ~]# scp root@jd1:/etc/kubernetes/admin.conf /etc/kubernetes/
     
 
 然后执行
 
-    [root@JD1 ~]# mkdir -p $HOME/.kube
-    [root@JD1 ~]# cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-    [root@JD1 ~]# chown $(id -u):$(id -g) $HOME/.kube/config
+    [root@JD2 ~]# mkdir -p $HOME/.kube
+    [root@JD2 ~]# cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+    [root@JD2 ~]# chown $(id -u):$(id -g) $HOME/.kube/config
+jd3主机也作同样操作，再次执行kubectl命令查看
+```
+# 检查nodes
+[root@JD2 ~]# kubectl get nodes
+NAME   STATUS   ROLES    AGE   VERSION
+jd1    Ready    master   63m   v1.17.2
+jd2    Ready    <none>   52m   v1.17.2
+jd3    Ready    <none>   52m   v1.17.2
+
+# 检查pods
+[root@JD2 ~]# kubectl get pods -A
+NAMESPACE              NAME                                         READY   STATUS    RESTARTS   AGE
+kube-system            coredns-7f9c544f75-hc954                     1/1     Running   0          64m
+kube-system            coredns-7f9c544f75-nlrkx                     1/1     Running   0          64m
+kube-system            etcd-jd1                                     1/1     Running   0          64m
+kube-system            kube-apiserver-jd1                           1/1     Running   0          64m
+kube-system            kube-controller-manager-jd1                  1/1     Running   0          64m
+kube-system            kube-flannel-ds-amd64-27b72                  1/1     Running   0          57m
+kube-system            kube-flannel-ds-amd64-27l7c                  1/1     Running   0          53m
+kube-system            kube-flannel-ds-amd64-7bg5p                  1/1     Running   0          53m
+kube-system            kube-proxy-44698                             1/1     Running   0          53m
+kube-system            kube-proxy-flx2c                             1/1     Running   0          64m
+kube-system            kube-proxy-kk2nd                             1/1     Running   0          53m
+kube-system            kube-scheduler-jd1                           1/1     Running   0          64m
+kubernetes-dashboard   dashboard-metrics-scraper-7b64584c5c-jwmhv   1/1     Running   0          47m
+kubernetes-dashboard   kubernetes-dashboard-566f567dc7-ktdpf        1/1     Running   0          47m
+```
