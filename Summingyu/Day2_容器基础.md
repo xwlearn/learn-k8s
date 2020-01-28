@@ -96,4 +96,141 @@ $ docker run -it --cpu-period=100000 --cpu-quota=20000 ubuntu /bin/bash
 
 需要明确的是，rootfs 只是一个操作系统所包含的文件、配置和目录，并不包括操作系统内核。在 Linux 操作系统中，这两部分是分开存放的，操作系统只有在开机启动时才会加载指定版本的内核镜像。
 
-### docker灵魂--系统内核
+### docker灵魂--一致性
+
+由于 rootfs 里打包的不只是应用，而是整个操作系统的文件和目录，也就意味着，应用以及它运行所需要的所有依赖，都被封装在了一起。  
+对一个应用来说，操作系统本身才是它运行所需要的最完整的“依赖库”。  
+这种深入到操作系统级别的运行环境一致性，打通了应用在本地开发和远端执行环境之间难以逾越的鸿沟.  
+
+> Docker 在镜像的设计中，引入了层（layer）的概念。也就是说，用户制作镜像的每一步操作，都会生成一个层，也就是一个增量 rootfs。
+> 这是使用了Union File System来实现增量rootfs
+
+## 重新认识Docker容器
+
+使用Dockerfile构建镜像
+app.py内容如下:
+
+```python
+from flask import Flask
+import socket
+import os
+
+app = Flask(__name__)
+
+@app.route('/')
+def hello():
+    html = "<h3>Hello {name}!</h3>" \
+           "<b>Hostname:</b> {hostname}<br/>"           
+    return html.format(name=os.getenv("NAME", "world"), hostname=socket.gethostname())
+    
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=80)
+```
+
+requirements.txt 内容如下:
+
+```bash
+$ cat requirements.txt
+Flask
+```
+
+Dockerfile内容:
+
+```Dockerfile
+# 使用官方提供的Python开发镜像作为基础镜像
+FROM python:2.7-slim
+
+# 将工作目录切换为/app
+WORKDIR /app
+
+# 将当前目录下的所有内容复制到/app下
+ADD . /app
+
+# 使用pip命令安装这个应用所需要的依赖
+RUN pip install --trusted-host pypi.python.org -r requirements.txt
+
+# 允许外界访问容器的80端口
+EXPOSE 80
+
+# 设置环境变量
+ENV NAME World
+
+# 设置容器进程为：python app.py，即：这个Python应用的启动命令
+CMD ["python", "app.py"]
+```
+
+执行命令`docker build -t helloworld`命令
+
+```bash
+[root@JD1 test_docker]# docker build -t helloworld .  
+Sending build context to Docker daemon 4.096 kB
+Step 1/7 : FROM python:2.7-slim
+Trying to pull repository docker.io/library/python ...
+2.7-slim: Pulling from docker.io/library/python
+8ec398bc0356: Pull complete
+1cfa5cc2566c: Pull complete
+642c5fbdca36: Pull complete
+df3df7d23149: Pull complete
+Digest: sha256:8ba6b057f6f93f888cf74e4b7ca57a62cbda108b28ea6c91eab60e387b650027
+Status: Downloaded newer image for docker.io/python:2.7-slim
+ ---> e2df0a42e2de
+Step 2/7 : WORKDIR /app
+ ---> 33f29ee4f8ed
+Removing intermediate container ab565fb401a8
+Step 3/7 : ADD . /app
+ ---> 7ec575bf3708
+Removing intermediate container ffb8608c3779
+Step 4/7 : RUN pip install --trusted-host pypi.python.org -r requirements.txt
+ ---> Running in 61d1899776c8
+
+DEPRECATION: Python 2.7 reached the end of its life on January 1st, 2020. Please upgrade your Python as Python 2.7 is no longer maintained. A future version of pip will drop support for Python 2.7. More details about Python 2 support in pip, can be found at https://pip.pypa.io/en/latest/development/release-process/#python-2-support
+Collecting Flask
+  Downloading Flask-1.1.1-py2.py3-none-any.whl (94 kB)
+Collecting click>=5.1
+  Downloading Click-7.0-py2.py3-none-any.whl (81 kB)
+Collecting itsdangerous>=0.24
+  Downloading itsdangerous-1.1.0-py2.py3-none-any.whl (16 kB)
+Collecting Werkzeug>=0.15
+  Downloading Werkzeug-0.16.1-py2.py3-none-any.whl (327 kB)
+Collecting Jinja2>=2.10.1
+  Downloading Jinja2-2.11.0-py2.py3-none-any.whl (126 kB)
+Collecting MarkupSafe>=0.23
+  Downloading MarkupSafe-1.1.1-cp27-cp27mu-manylinux1_x86_64.whl (24 kB)
+Installing collected packages: click, itsdangerous, Werkzeug, MarkupSafe, Jinja2, Flask
+Successfully installed Flask-1.1.1 Jinja2-2.11.0 MarkupSafe-1.1.1 Werkzeug-0.16.1 click-7.0 itsdangerous-1.1.0
+ ---> 4947fa09fef7
+Removing intermediate container 61d1899776c8
+Step 5/7 : EXPOSE 80
+ ---> Running in 45e972716102
+ ---> 035553f4d3a1
+Removing intermediate container 45e972716102
+Step 6/7 : ENV NAME World
+ ---> Running in 0db6453dd852
+ ---> e548857ef3e4
+Removing intermediate container 0db6453dd852
+Step 7/7 : CMD python app.py
+ ---> Running in 7c2f0861a5ce
+ ---> e650b4a76f93
+Removing intermediate container 7c2f0861a5ce
+Successfully built e650b4a76f93
+
+```
+
+运行容器:
+
+```bash
+[root@JD1 ~]# docker run -p 4000:80 helloworld
+ * Serving Flask app "app" (lazy loading)
+ * Environment: production
+   WARNING: This is a development server. Do not use it in a production deployment.
+   Use a production WSGI server instead.
+ * Debug mode: off
+ * Running on http://0.0.0.0:80/ (Press CTRL+C to quit)
+```
+
+访问4000端口
+
+```bash
+[root@JD1 ~]# curl http://127.0.0.1:4000
+<h3>Hello World!</h3><b>Hostname:</b> d17baeaf1ebf<br/>[root@JD1 ~]#
+```
