@@ -120,9 +120,9 @@ app = Flask(__name__)
 @app.route('/')
 def hello():
     html = "<h3>Hello {name}!</h3>" \
-           "<b>Hostname:</b> {hostname}<br/>"           
+           "<b>Hostname:</b> {hostname}<br/>"
     return html.format(name=os.getenv("NAME", "world"), hostname=socket.gethostname())
-    
+
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=80)
 ```
@@ -234,3 +234,30 @@ Successfully built e650b4a76f93
 [root@JD1 ~]# curl http://127.0.0.1:4000
 <h3>Hello World!</h3><b>Hostname:</b> d17baeaf1ebf<br/>[root@JD1 ~]#
 ```
+
+一个进程，可以选择加入到某个进程已有的 Namespace 当中，从而达到“进入”这个进程所在容器的目的，这正是 `docker exec` 的实现原理。
+
+Docker 还专门提供了一个参数，可以让你启动一个容器并“加入”到另一个容器的 Network Namespace 里，这个参数就是 -net，比如:
+
+```bash
+docker run -it --net container:4ddf4638572d busybox ifconfig
+```
+
+### Docker Volume
+
+Volume 机制，允许你将宿主机上指定的目录或者文件，挂载到容器里面进行读取和修改操作。
+
+## 谈谈K8s本质
+
+容器从一个开发者手里的小工具，一跃成为了云计算领域的绝对主角；而能够定义容器组织和管理规范的“容器编排”技术，则当仁不让地坐上了容器技术领域的“头把交椅”。
+
+在 Kubernetes 项目中，kubelet 主要负责同容器运行时（比如 Docker 项目）打交道。  
+此外，kubelet 还通过 gRPC 协议同一个叫作 Device Plugin 的插件进行交互。  
+kubelet 的另一个重要功能，则是调用网络插件和存储插件为容器配置网络和持久化存储。  
+
+> 从一开始，Kubernetes 项目就没有像同时期的各种“容器云”项目那样，把 Docker 作为整个架构的核心，而仅仅把它作为最底层的一个容器运行时实现。  
+> 运行在大规模集群中的各种任务之间，实际上存在着各种各样的关系。这些关系的处理，才是作业编排和管理系统最困难的地方。
+
+Kubernetes 项目给 Pod 绑定一个 Service 服务，而 Service 服务声明的 IP 地址等信息是“终生不变”的。这个Service 服务的主要作用，就是作为 Pod 的代理入口（Portal），从而代替 Pod 对外暴露一个固定的网络地址。
+
+![Day2_img_pod_relation](./images/Day2_img_pod_relation.png)
