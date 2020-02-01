@@ -100,3 +100,40 @@ kube-scheduler-jd1            1/1     Running   1          4d4h
 ```bash
 kubectl apply -f https://git.io/weave-kube-1.6
 ```
+
+### 部署 Kubernetes 的 Worker 节点
+
+1. 第一步，在所有 Worker 节点上执行“安装 kubeadm 和 Docker”一节的所有步骤。
+2. 第二步，执行部署 Master 节点时生成的 kubeadm join 指令：
+
+### 通过 Taint/Toleration 调整 Master 执行 Pod 的策略
+
+认情况下 Master 节点是不允许运行用户 Pod 的。  
+而 Kubernetes 做到这一点，依靠的是 Kubernetes 的 Taint/Toleration 机制。
+它的原理非常简单：
+
+一旦某个节点被加上了一个 Taint，即被“打上了污点”，那么所有 Pod 就都不能在这个节点上运行，因为 Kubernetes 的 Pod 都有“洁癖”。除非，有个别的 Pod 声明自己能“容忍”这个“污点”，即声明了 Toleration，它才可以在这个节点上运行。
+
+为节点打上“污点”（Taint）的命令是：
+
+```bash
+kubectl taint nodes node1 foo=bar:NoSchedule
+```
+
+### 部署 Dashboard 可视化插件
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/master/src/deploy/recommended/kubernetes-dashboard.yaml
+```
+
+### 部署容器存储插件
+
+存储插件会在容器里挂载一个基于网络或者其他机制的远程数据卷，使得在容器里创建的文件，实际上是保存在远程存储服务器上，或者以分布式的方式保存在多个节点上，而与当前宿主机没有任何绑定关系。
+
+部署命令:
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/rook/rook/master/cluster/examples/kubernetes/ceph/operator.yaml
+
+kubectl apply -f https://raw.githubusercontent.com/rook/rook/master/cluster/examples/kubernetes/ceph/cluster.yaml
+```
