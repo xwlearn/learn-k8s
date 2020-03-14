@@ -54,7 +54,7 @@ $ ls /etc/kubernetes/manifests/
 etcd.yaml  kube-apiserver.yaml  kube-controller-manager.yaml  kube-scheduler.yaml
 ```
 
-ubelet 就会自动创建这些 YAML 文件中定义的 Pod，即 Master 组件的容器。  
+kubelet 就会自动创建这些 YAML 文件中定义的 Pod，即 Master 组件的容器。  
 Master 容器启动后，kubeadm 会通过检查 `localhost:6443/healthz` 这个 Master 组件的健康检查 URL，等待 Master 组件完全运行起来。
 
 **然后，kubeadm 就会为集群生成一个 bootstrap token。**  
